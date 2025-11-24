@@ -1,5 +1,7 @@
 # AstroSpike – Python Application
 
+![Screenshot dell'app](image.png)
+
 **AstroSpike** is a cross‑platform desktop application written in Python (PyQt6) that adds realistic diffraction spikes, halos, and rainbow effects to astrophotography images. It mirrors the functionality of the original React/Electron version, providing a native UI and high‑performance rendering using Qt's painting system.
 
 ---
