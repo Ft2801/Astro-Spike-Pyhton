@@ -86,6 +86,12 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
     sum_y = 0.0
     sum_lum = 0.0
     
+    # Color tracking with weighted average (penalizing white core)
+    sum_r = 0.0
+    sum_g = 0.0
+    sum_b = 0.0
+    sum_color_weight = 0.0
+    
     pixel_count = 0
     max_lum = 0.0
     
@@ -110,6 +116,30 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
             sum_y += cy * l
             sum_lum += l
             
+            # Color extraction with white core penalization
+            pr = float(data[cy, cx, 0])
+            pg = float(data[cy, cx, 1])
+            pb = float(data[cy, cx, 2])
+            
+            max_rgb = max(pr, pg, pb)
+            min_rgb = min(pr, pg, pb)
+            saturation = (max_rgb - min_rgb) / 255.0 if max_rgb > 0 else 0
+            
+            # Calculate color weight:
+            # - If pixel is "burned" (R, G, B all > 245), reduce weight drastically
+            # - If pixel is colored (has saturation), increase weight
+            if pr > 245 and pg > 245 and pb > 245:
+                # White/burned pixel - minimal weight
+                color_weight = 0.01
+            else:
+                # Colored pixel - weight based on luminance + saturation boost
+                color_weight = (l / 255.0) + saturation * 2.0
+            
+            sum_r += pr * color_weight
+            sum_g += pg * color_weight
+            sum_b += pb * color_weight
+            sum_color_weight += color_weight
+            
             pixel_count += 1
             if l > max_lum:
                 max_lum = l
@@ -122,13 +152,21 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
             
     if pixel_count == 0:
         return None
+    
+    # Calculate average color from weighted samples
+    if sum_color_weight > 0:
+        avg_r = sum_r / sum_color_weight
+        avg_g = sum_g / sum_color_weight
+        avg_b = sum_b / sum_color_weight
+    else:
+        avg_r, avg_g, avg_b = 255, 255, 255
         
     return Star(
         x=sum_x / sum_lum,
         y=sum_y / sum_lum,
         brightness=max_lum / 255.0,
         radius=math.sqrt(pixel_count / math.pi),
-        color=Color(255, 255, 255) # Placeholder
+        color=Color(avg_r, avg_g, avg_b)
     )
 
 def sample_halo_color(data: np.ndarray, width: int, height: int, star: Star) -> Color:

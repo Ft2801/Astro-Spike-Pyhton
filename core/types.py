@@ -1,5 +1,11 @@
 from dataclasses import dataclass, field
 from typing import List, Tuple
+from enum import Enum
+
+class ToolMode(Enum):
+    NONE = 'none'
+    ADD = 'add'
+    ERASE = 'erase'
 
 @dataclass
 class Color:
@@ -31,7 +37,7 @@ class SpikeConfig:
     sharpness: float = 0.5
 
     # Appearance
-    color_saturation: float = 3.0  # Updated max
+    color_saturation: float = 0.0  # Range 0.0-1.0: 0=Boost naturale, 1=Hyper Vivid
     hue_shift: float = 0.0
 
     # Secondary Spikes

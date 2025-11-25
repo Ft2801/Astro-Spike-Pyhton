@@ -28,7 +28,13 @@ class Renderer:
         painter.end()
         return image
 
-    def get_star_color(self, star: Star, hue_shift: float, saturation_mult: float, alpha: float) -> QColor:
+    def get_star_color(self, star: Star, hue_shift: float, saturation_input: float, alpha: float) -> QColor:
+        """Calculate star color with hybrid saturation logic.
+        
+        saturation_input: 0.0 to 1.0
+            - 0.0: Natural color boost (colors are already enhanced)
+            - 1.0: Hyper Vivid (pure colors, S=100%, L=50%)
+        """
         r, g, b = int(star.color.r), int(star.color.g), int(star.color.b)
         
         # RGB to HSL
@@ -56,38 +62,31 @@ class Renderer:
 
         new_h = (h * 360.0) + hue_shift
         
-        # Saturation Logic
-        base_saturation = max(s, 0.25)
-        new_s = base_saturation * 100.0 * saturation_mult
+        # === NEW HYBRID SATURATION LOGIC ===
+        # Remap input: saturation_input (0.0-1.0) -> internal scale (1.0-2.0)
+        sat_factor = 1.0 + saturation_input
         
-        if saturation_mult > 1.5:
-            extra_boost = math.pow(saturation_mult - 1.5, 1.5) * 40.0
-            new_s += extra_boost
-            
-        # Lightness Logic
-        new_l = max(l * 100.0, 40.0)
-        if saturation_mult > 1.0:
-            new_l = min(95.0, new_l + (saturation_mult - 1.0) * 10.0)
-            
-        new_l = max(65.0, min(95.0, new_l))
+        # Phase 1: Base Boost (ALWAYS ACTIVE)
+        # Apply huge gain to natural saturation to make faint colors visible
+        boosted_s = min(1.0, s * 16.0)
         
-        # HSL to RGB conversion for QColor
-        # QColor.fromHslF expects 0-1 range for H, S, L
-        # But we calculated S > 100 which QColor might clamp or handle.
-        # We need to manually convert HSL to RGB if we want S > 100 behavior,
-        # but standard HSL definition caps S at 1.
-        # However, the JS code produced a CSS string `hsla(...)` which browsers handle.
-        # If S > 100% in CSS, it just clamps to 100% usually, unless using modern color spaces.
-        # Wait, my JS logic allowed S > 100. Browsers clamp it.
-        # So I should clamp S to 1.0 (100%) for QColor, OR implement the "vibrancy" by other means.
-        # Actually, if S is very high, it just means pure color.
-        # I will clamp S to 1.0 for QColor but maybe adjust L?
-        # No, the user liked the "vibrant" look.
-        # If I clamp S to 1.0, I lose the "extra boost" if it was doing anything special in browser.
-        # In CSS `hsl(0, 150%, 50%)` is same as `hsl(0, 100%, 50%)`.
+        # Phase 2: Hyper Mode (0 to 1 user input)
+        # Interpolate saturation towards 100% (1.0)
+        # Interpolate lightness towards 50% (0.5) for pure colors
+        hyper_factor = saturation_input  # 0 = no hyper, 1 = full hyper
         
-        final_s = min(1.0, new_s / 100.0)
-        final_l = min(1.0, new_l / 100.0)
+        # Interpolate S towards 1.0 (100% saturation)
+        final_s = boosted_s + (1.0 - boosted_s) * hyper_factor
+        
+        # Interpolate L towards 0.5 (optimal for pure colors)
+        # Start from a reasonable base lightness
+        base_l = max(l, 0.65)  # Ensure minimum brightness
+        target_l = 0.5  # Pure color lightness
+        final_l = base_l + (target_l - base_l) * hyper_factor
+        
+        # Clamp final values
+        final_s = max(0.0, min(1.0, final_s))
+        final_l = max(0.4, min(0.95, final_l))  # Keep some lightness range
         final_h = (new_h % 360.0) / 360.0
         
         c = QColor.fromHslF(final_h, final_s, final_l, alpha)
@@ -228,15 +227,16 @@ class Renderer:
                 painter.setPen(r_pen)
                 painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
             
-            # Hot Core
-            if not is_secondary and length > 30:
-                core_len = length * 0.15
-                core_end_x = star.x + cos_t * core_len
-                core_end_y = star.y + sin_t * core_len
-                
-                core_pen = QPen(QColor(255, 255, 255, int(intensity * 0.8 * 255)), thick * 0.6)
-                painter.setPen(core_pen)
-                painter.drawLine(QPointF(start_x, start_y), QPointF(core_end_x, core_end_y))
+            # Hot Core - RIMOSSO: causava la croce bianca intensa visibile all'interno delle spike
+            # Se vuoi riattivarlo, decommenta il codice sotto:
+            # if not is_secondary and length > 30:
+            #     core_len = length * 0.15
+            #     core_end_x = star.x + cos_t * core_len
+            #     core_end_y = star.y + sin_t * core_len
+            #     
+            #     core_pen = QPen(QColor(255, 255, 255, int(intensity * 0.8 * 255)), thick * 0.6)
+            #     painter.setPen(core_pen)
+            #     painter.drawLine(QPointF(start_x, start_y), QPointF(core_end_x, core_end_y))
 
     def draw_halo(self, painter: QPainter, star: Star, radius: float, width: float, blur: float, color: QColor):
         if radius <= 0 or width <= 0:
