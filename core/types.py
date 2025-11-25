@@ -26,6 +26,8 @@ class SpikeConfig:
     # Detection
     threshold: int = 100  # UI range 1-100, maps to internal 140-240
     star_amount: float = 100.0
+    min_star_size: float = 0.0  # UI 0-100 → internal 0-2 radius
+    max_star_size: float = 100.0  # UI 0-100 → internal 96-100% removal
 
     # Main Spikes
     quantity: int = 4

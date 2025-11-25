@@ -99,8 +99,34 @@ class Renderer:
         if not stars:
             return
 
+        # Apply quantity limit
         limit = int(len(stars) * (config.star_amount / 100.0))
         active_stars = stars[:limit]
+        
+        # Apply min size filtering (absolute radius threshold)
+        # Remap: UI 0-100 → internal 0-2
+        if config.min_star_size > 0:
+            internal_min_size = config.min_star_size * 0.02  # 100 → 2.0
+            active_stars = [star for star in active_stars if star.radius >= internal_min_size]
+        
+        # Apply max size filtering (progressive removal of largest stars)
+        # Remap: UI 0-100 → internal 96-100 (percentage)
+        internal_max_size = 96 + (config.max_star_size * 0.04)  # 0→96, 100→100
+        
+        if internal_max_size < 100 and len(active_stars) > 0:
+            # Sort by radius (descending) to identify largest stars
+            sorted_by_size = sorted(active_stars, key=lambda s: s.radius, reverse=True)
+            
+            # Calculate how many largest stars to remove based on percentage
+            # internal_max_size = 100 → keep all (remove 0%)
+            # internal_max_size = 96 → remove 4% of largest
+            removal_percentage = (100 - internal_max_size) / 100.0
+            num_to_remove = int(len(sorted_by_size) * removal_percentage)
+            
+            # Remove the largest stars using object IDs
+            if num_to_remove > 0:
+                stars_to_remove_ids = set(id(star) for star in sorted_by_size[:num_to_remove])
+                active_stars = [star for star in active_stars if id(star) not in stars_to_remove_ids]
         
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         

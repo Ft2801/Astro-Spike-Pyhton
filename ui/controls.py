@@ -109,7 +109,9 @@ class ControlPanel(QWidget):
         # Detection
         self._add_group("Detection", [
             ("Threshold", 1, 100, 1, self.config.threshold, "threshold", ""),
-            ("Quantity Limit %", 0, 100, 1, self.config.star_amount, "star_amount", "%")
+            ("Quantity Limit %", 0, 100, 1, self.config.star_amount, "star_amount", "%"),
+            ("Min Star Size", 0, 100, 1, self.config.min_star_size, "min_star_size", ""),
+            ("Max Star Size", 0, 100, 1, self.config.max_star_size, "max_star_size", "")
         ])
         
         # Geometry
