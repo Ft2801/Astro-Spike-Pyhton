@@ -29,11 +29,12 @@ class Renderer:
         return image
 
     def get_star_color(self, star: Star, hue_shift: float, saturation_input: float, alpha: float) -> QColor:
-        """Calculate star color with hybrid saturation logic.
+        """Calculate star color with saturation control.
         
-        saturation_input: 0.0 to 1.0
-            - 0.0: Natural color boost (colors are already enhanced)
-            - 1.0: Hyper Vivid (pure colors, S=100%, L=50%)
+        saturation_input: 0.0 to 2.0
+            - 0.0: Completely desaturated (grayscale)
+            - 1.0: Natural color boost (boosted colors)
+            - 2.0: Hyper Vivid (pure colors, S=100%, L=50%)
         """
         r, g, b = int(star.color.r), int(star.color.g), int(star.color.b)
         
@@ -62,31 +63,33 @@ class Renderer:
 
         new_h = (h * 360.0) + hue_shift
         
-        # === NEW HYBRID SATURATION LOGIC ===
-        # Remap input: saturation_input (0.0-1.0) -> internal scale (1.0-2.0)
-        sat_factor = 1.0 + saturation_input
-        
-        # Phase 1: Base Boost (ALWAYS ACTIVE)
-        # Apply huge gain to natural saturation to make faint colors visible
+        # === NEW 0-2 SATURATION LOGIC ===
+        # Base boosted saturation (16x multiplier for visibility)
         boosted_s = min(1.0, s * 16.0)
         
-        # Phase 2: Hyper Mode (0 to 1 user input)
-        # Interpolate saturation towards 100% (1.0)
-        # Interpolate lightness towards 50% (0.5) for pure colors
-        hyper_factor = saturation_input  # 0 = no hyper, 1 = full hyper
-        
-        # Interpolate S towards 1.0 (100% saturation)
-        final_s = boosted_s + (1.0 - boosted_s) * hyper_factor
-        
-        # Interpolate L towards 0.5 (optimal for pure colors)
-        # Start from a reasonable base lightness
-        base_l = max(l, 0.65)  # Ensure minimum brightness
-        target_l = 0.5  # Pure color lightness
-        final_l = base_l + (target_l - base_l) * hyper_factor
+        if saturation_input <= 1.0:
+            # Range 0-1: Desaturation
+            # 0 = completely desaturated (S=0)
+            # 1 = natural boosted saturation
+            final_s = boosted_s * saturation_input
+            final_l = max(l, 0.65)  # Keep brightness
+        else:
+            # Range 1-2: Hyper Vivid mode
+            # 1 = natural boosted saturation
+            # 2 = pure color (S=1.0, L=0.5)
+            hyper_factor = saturation_input - 1.0  # 0 to 1
+            
+            # Interpolate S towards 1.0 (100% saturation)
+            final_s = boosted_s + (1.0 - boosted_s) * hyper_factor
+            
+            # Interpolate L towards 0.5 (optimal for pure colors)
+            base_l = max(l, 0.65)
+            target_l = 0.5
+            final_l = base_l + (target_l - base_l) * hyper_factor
         
         # Clamp final values
         final_s = max(0.0, min(1.0, final_s))
-        final_l = max(0.4, min(0.95, final_l))  # Keep some lightness range
+        final_l = max(0.4, min(0.95, final_l))
         final_h = (new_h % 360.0) / 360.0
         
         c = QColor.fromHslF(final_h, final_s, final_l, alpha)

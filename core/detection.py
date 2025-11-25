@@ -169,6 +169,10 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
     min_x, max_x = start_x, start_x
     min_y, max_y = start_y, start_y
     
+    # Track pixel coordinates for shape analysis
+    pixel_coords_x = []
+    pixel_coords_y = []
+    
     stack = [(start_x, start_y)]
     
     # Increased pixel limit for large stars
@@ -209,6 +213,10 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
             max_x = max(max_x, cx)
             min_y = min(min_y, cy)
             max_y = max(max_y, cy)
+            
+            # Track pixel coordinates for shape analysis
+            pixel_coords_x.append(cx)
+            pixel_coords_y.append(cy)
             
             sum_x += cx * l
             sum_y += cy * l
@@ -259,6 +267,46 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
             
     if pixel_count == 0:
         return None
+    
+    # === SHAPE ANALYSIS: Eccentricity Check ===
+    # Reject irregular blobs (nebulosity) based on axis ratio
+    if pixel_count >= 10:  # Only check if we have enough pixels
+        coords_x = np.array(pixel_coords_x, dtype=float)
+        coords_y = np.array(pixel_coords_y, dtype=float)
+        
+        # Calculate centroid
+        cx = np.mean(coords_x)
+        cy = np.mean(coords_y)
+        
+        # Central moments (second-order)
+        dx = coords_x - cx
+        dy = coords_y - cy
+        
+        mu20 = np.mean(dx * dx)
+        mu02 = np.mean(dy * dy)
+        mu11 = np.mean(dx * dy)
+        
+        # Covariance matrix: [[mu20, mu11], [mu11, mu02]]
+        # Eigenvalues give variance along principal axes
+        # Calculate eigenvalues analytically for 2x2 matrix
+        trace = mu20 + mu02
+        det = mu20 * mu02 - mu11 * mu11
+        
+        # Eigenvalues: λ = (trace ± sqrt(trace² - 4*det)) / 2
+        discriminant = trace * trace - 4 * det
+        
+        if discriminant >= 0 and trace > 0:
+            sqrt_disc = math.sqrt(discriminant)
+            lambda1 = (trace + sqrt_disc) / 2.0
+            lambda2 = (trace - sqrt_disc) / 2.0
+            
+            # Axis ratio: larger / smaller
+            if lambda2 > 0:
+                axis_ratio = math.sqrt(lambda1 / lambda2)
+                
+                # Reject if too elongated/irregular
+                if axis_ratio > 1.5:
+                    return None
     
     # Relaxed Compactness check
     bbox_width = max_x - min_x + 1

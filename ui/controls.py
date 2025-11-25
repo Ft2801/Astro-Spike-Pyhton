@@ -124,7 +124,7 @@ class ControlPanel(QWidget):
         # Appearance
         self._add_group("Appearance", [
             ("Intensity", 0, 1.0, 0.05, self.config.intensity, "intensity", ""),
-            ("Color Saturation", 0, 1.0, 0.05, self.config.color_saturation, "color_saturation", ""),
+            ("Color Saturation", 0, 2.0, 0.05, self.config.color_saturation, "color_saturation", ""),
             ("Hue Shift", -180, 180, 1, self.config.hue_shift, "hue_shift", "°")
         ])
         

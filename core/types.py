@@ -37,7 +37,7 @@ class SpikeConfig:
     sharpness: float = 0.5
 
     # Appearance
-    color_saturation: float = 0.0  # Range 0.0-1.0: 0=Boost naturale, 1=Hyper Vivid
+    color_saturation: float = 1.0  # Range 0.0-2.0: 0=Desaturated, 1=Natural, 2=Hyper Vivid
     hue_shift: float = 0.0
 
     # Secondary Spikes
