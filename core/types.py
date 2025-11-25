@@ -24,7 +24,7 @@ class Star:
 @dataclass
 class SpikeConfig:
     # Detection
-    threshold: int = 240
+    threshold: int = 100  # UI range 1-100, maps to internal 140-240
     star_amount: float = 100.0
 
     # Main Spikes

@@ -108,7 +108,7 @@ class ControlPanel(QWidget):
         
         # Detection
         self._add_group("Detection", [
-            ("Threshold", 100, 254, 1, self.config.threshold, "threshold", ""),
+            ("Threshold", 1, 100, 1, self.config.threshold, "threshold", ""),
             ("Quantity Limit %", 0, 100, 1, self.config.star_amount, "star_amount", "%")
         ])
         

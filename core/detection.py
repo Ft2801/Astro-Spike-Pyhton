@@ -1,13 +1,65 @@
 import numpy as np
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict
 from .types import Star, Color
 import math
+
+def map_threshold_to_internal(ui_threshold: int) -> float:
+    """
+    Maps UI threshold (1-100) to internal threshold (140-240).
+    UI 1 -> 140 (more sensitive, detects more stars)
+    UI 100 -> 240 (less sensitive, only brightest stars)
+    """
+    # Linear mapping: ui 1-100 -> internal 140-240
+    return 140 + (ui_threshold - 1) * (240 - 140) / (100 - 1)
+
+def find_local_peak(lum_data: np.ndarray, x: int, y: int, width: int, height: int) -> Tuple[int, int, float]:
+    """
+    Finds the local maximum brightness starting from (x, y).
+    """
+    curr_x, curr_y = x, y
+    curr_lum = lum_data[y, x]
+    
+    # Limit iterations to prevent infinite loops
+    for _ in range(20):
+        best_lum = curr_lum
+        best_x, best_y = curr_x, curr_y
+        changed = False
+        
+        # Check 3x3 neighborhood
+        y_min = max(0, curr_y - 1)
+        y_max = min(height, curr_y + 2)
+        x_min = max(0, curr_x - 1)
+        x_max = min(width, curr_x + 2)
+        
+        # Extract local window
+        window = lum_data[y_min:y_max, x_min:x_max]
+        max_val = np.max(window)
+        
+        if max_val > best_lum:
+            # Find coordinates of max value in window
+            local_y, local_x = np.unravel_index(np.argmax(window), window.shape)
+            best_x = x_min + local_x
+            best_y = y_min + local_y
+            best_lum = max_val
+            changed = True
+        
+        if not changed:
+            break
+            
+        curr_x, curr_y = best_x, best_y
+        curr_lum = best_lum
+        
+    return curr_x, curr_y, curr_lum
 
 def detect_stars(image_data: np.ndarray, threshold: int) -> List[Star]:
     """
     Analyzes image data (H, W, 3) or (H, W, 4) to find stars.
+    Uses a peak-finding approach followed by valley-aware flood fill.
     """
     height, width = image_data.shape[:2]
+    
+    # Map UI threshold to internal value
+    internal_threshold = map_threshold_to_internal(threshold)
     
     # Calculate luminance
     # 0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -16,55 +68,73 @@ def detect_stars(image_data: np.ndarray, threshold: int) -> List[Star]:
     b = image_data[:, :, 2].astype(float)
     lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
     
-    raw_stars: List[Star] = []
     stride = 4
+    
+    # Stride-based scanning to find potential candidates
+    lum_strided = lum[0:height:stride, 0:width:stride]
+    cy_indices, cx_indices = np.where(lum_strided > internal_threshold)
+    
+    # Find true peaks for each candidate
+    unique_peaks: Dict[Tuple[int, int], float] = {}
+    
+    for i in range(len(cy_indices)):
+        y = cy_indices[i] * stride
+        x = cx_indices[i] * stride
+        
+        px, py, plum = find_local_peak(lum, x, y, width, height)
+        
+        if plum > internal_threshold:
+            unique_peaks[(px, py)] = plum
+            
+    # Sort peaks by brightness (descending)
+    # This ensures we process the core of bright stars first
+    sorted_peaks = sorted(unique_peaks.items(), key=lambda item: item[1], reverse=True)
+    
+    stars: List[Star] = []
     checked = np.zeros((height, width), dtype=bool)
     
-    # Stride-based scanning using NumPy slicing for speed
-    # We create a mask of potential candidates
-    # lum[y, x] > threshold
-    # We only check pixels at stride intervals
-    
-    # Create a strided view
-    y_indices = np.arange(0, height, stride)
-    x_indices = np.arange(0, width, stride)
-    
-    # Meshgrid for coordinates
-    yy, xx = np.meshgrid(y_indices, x_indices, indexing='ij')
-    
-    # Extract luminance at these points
-    lum_strided = lum[0:height:stride, 0:width:stride]
-    
-    # Find candidates
-    candidates = np.argwhere((lum_strided > threshold) & (~checked[0:height:stride, 0:width:stride]))
-    
-    # Convert strided indices back to full coordinates
-    # candidates is (N, 2) array of (y_idx, x_idx) in strided space
-    
-    for cand in candidates:
-        y_idx, x_idx = cand
-        y = y_idx * stride
-        x = x_idx * stride
-        
-        if checked[y, x]:
+    for (px, py), plum in sorted_peaks:
+        if checked[py, px]:
             continue
             
-        star = flood_fill_star(image_data, lum, width, height, x, y, threshold, checked)
+        star = flood_fill_star(image_data, lum, width, height, px, py, internal_threshold, checked)
         if star:
-            raw_stars.append(star)
+            stars.append(star)
             
     # Merging Phase
-    raw_stars.sort(key=lambda s: s.radius, reverse=True)
+    # Relaxed merging: only merge if very close or if one is clearly an artifact
+    stars.sort(key=lambda s: s.radius, reverse=True)
     merged_stars: List[Star] = []
     
-    for star in raw_stars:
+    for star in stars:
         merged = False
         for existing in merged_stars:
             dx = star.x - existing.x
             dy = star.y - existing.y
             dist = math.sqrt(dx*dx + dy*dy)
             
-            if dist < (existing.radius + star.radius + 5):
+            # Merge logic:
+            # 1. If star is much dimmer (< 40% brightness) OR tiny, it's likely an artifact/noise -> Aggressive merge
+            # 2. If both are significant, only merge if they are extremely close (overlapping cores)
+            
+            brightness_ratio = star.brightness / max(existing.brightness, 0.01)
+            is_much_dimmer = brightness_ratio < 0.4
+            is_tiny = star.radius < 5
+            
+            should_merge = False
+            
+            if is_much_dimmer or is_tiny:
+                # Aggressive merging for artifacts
+                if dist < (existing.radius + star.radius) * 1.2:
+                    should_merge = True
+            else:
+                # Both are significant stars. Only merge if they are practically the same star.
+                # Previously 0.5, which was too aggressive when radii are large (low threshold).
+                # Reduced to 0.25 to allow close double stars.
+                if dist < (existing.radius + star.radius) * 0.25:
+                    should_merge = True
+            
+            if should_merge:
                 merged = True
                 break
         
@@ -93,10 +163,23 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
     sum_color_weight = 0.0
     
     pixel_count = 0
-    max_lum = 0.0
+    max_lum = lum_data[start_y, start_x] # Start at peak
+    
+    # Track bounding box for compactness check
+    min_x, max_x = start_x, start_x
+    min_y, max_y = start_y, start_y
     
     stack = [(start_x, start_y)]
-    max_pixels = 2500
+    
+    # Increased pixel limit for large stars
+    max_pixels = int(1000 + (max_lum / 255.0) * 50000)
+    
+    # Minimum luminance ratio
+    min_lum_ratio = 0.20
+    
+    # Valley detection: track the minimum luminance seen along the path
+    # If we see brightness increasing significantly after a valley, stop (entering another star)
+    path_min_lum = max_lum  # Track minimum luminance along the path
     
     while stack and pixel_count < max_pixels:
         cx, cy = stack.pop()
@@ -109,8 +192,23 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
             
         l = lum_data[cy, cx]
         
+        # Basic threshold check
         if l > threshold:
+            # Ratio check
+            if max_lum > 0 and l < (max_lum * min_lum_ratio):
+                continue
+            
             checked[cy, cx] = True
+            
+            # Update path minimum for valley detection
+            if l < path_min_lum:
+                path_min_lum = l
+            
+            # Update bounding box
+            min_x = min(min_x, cx)
+            max_x = max(max_x, cx)
+            min_y = min(min_y, cy)
+            max_y = max(max_y, cy)
             
             sum_x += cx * l
             sum_y += cy * l
@@ -141,17 +239,42 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
             sum_color_weight += color_weight
             
             pixel_count += 1
-            if l > max_lum:
-                max_lum = l
-                
-            # 4-connectivity
-            stack.append((cx + 1, cy))
-            stack.append((cx - 1, cy))
-            stack.append((cx, cy + 1))
-            stack.append((cx, cy - 1))
+            
+            # Check neighbors
+            neighbors = [
+                (cx + 1, cy), (cx - 1, cy),
+                (cx, cy + 1), (cx, cy - 1)
+            ]
+            
+            for nx, ny in neighbors:
+                if 0 <= nx < width and 0 <= ny < height:
+                    nl = lum_data[ny, nx]
+                    # Valley detection: if we've descended into a valley and now 
+                    # brightness is climbing back up significantly, we're entering another star
+                    # Don't cross if neighbor is brighter than our path minimum + tolerance
+                    valley_climb_tolerance = max(10, path_min_lum * 0.15)  # 15% of path min or 10, whichever is higher
+                    if nl > path_min_lum + valley_climb_tolerance:
+                        continue
+                    stack.append((nx, ny))
             
     if pixel_count == 0:
         return None
+    
+    # Relaxed Compactness check
+    bbox_width = max_x - min_x + 1
+    bbox_height = max_y - min_y + 1
+    bbox_area = bbox_width * bbox_height
+    
+    aspect_ratio = max(bbox_width, bbox_height) / max(min(bbox_width, bbox_height), 1)
+    if aspect_ratio > 5.0:  # Relaxed from 3
+        return None
+    
+    fill_ratio = pixel_count / max(bbox_area, 1)
+    if fill_ratio < 0.10 and pixel_count > 50:  # Relaxed from 0.15
+        return None
+    
+    # Removed Max Radius Check to allow large stars
+    calculated_radius = math.sqrt(pixel_count / math.pi)
     
     # Calculate average color from weighted samples
     if sum_color_weight > 0:
@@ -165,7 +288,7 @@ def flood_fill_star(data: np.ndarray, lum_data: np.ndarray, width: int, height: 
         x=sum_x / sum_lum,
         y=sum_y / sum_lum,
         brightness=max_lum / 255.0,
-        radius=math.sqrt(pixel_count / math.pi),
+        radius=calculated_radius,
         color=Color(avg_r, avg_g, avg_b)
     )
 
