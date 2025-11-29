@@ -11,6 +11,36 @@ from core.detection import detect_stars
 from ui.controls import ControlPanel
 from ui.canvas import CanvasPreview
 
+# Dark palette for forcing dark theme
+def set_dark_palette(app: QApplication):
+    from PyQt6.QtGui import QPalette, QColor
+    
+    dark_palette = QPalette()
+    
+    # Base colors
+    dark_palette.setColor(QPalette.ColorRole.Window, QColor(30, 30, 30))
+    dark_palette.setColor(QPalette.ColorRole.WindowText, QColor(224, 224, 224))
+    dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(45, 45, 48))
+    dark_palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(45, 45, 48))
+    dark_palette.setColor(QPalette.ColorRole.ToolTipText, QColor(224, 224, 224))
+    dark_palette.setColor(QPalette.ColorRole.Text, QColor(224, 224, 224))
+    dark_palette.setColor(QPalette.ColorRole.Button, QColor(45, 45, 48))
+    dark_palette.setColor(QPalette.ColorRole.ButtonText, QColor(224, 224, 224))
+    dark_palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 255, 255))
+    dark_palette.setColor(QPalette.ColorRole.Link, QColor(0, 122, 204))
+    dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(0, 122, 204))
+    dark_palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
+    
+    # Disabled colors
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(127, 127, 127))
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(127, 127, 127))
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(127, 127, 127))
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.HighlightedText, QColor(127, 127, 127))
+    
+    app.setPalette(dark_palette)
+    app.setStyle("Fusion")  # Fusion style works best with custom palettes
+
 class StarDetectionThread(QThread):
     stars_detected = pyqtSignal(list)
 
@@ -432,6 +462,10 @@ class MainWindow(QMainWindow):
         
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    
+    # Force dark theme
+    set_dark_palette(app)
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
